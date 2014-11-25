@@ -43,19 +43,16 @@ public class SpotlightSolver implements ISpotlightSolver {
         SATSolver satSolver = new SATSolver();
         // addClauses to solver using satSolver.addClause()        
         // TODO
-//        satSolver.addClause(new Clause(1));
         for (Field field : board) {
         	System.out.println("Now processing Field Nr. " + board.getSequentialIndex(field));
 			int constraint = field.getConstraint();
 			List<Field> region = field.getRegion(board);
-			int numOfRegion = region.size();	//计算region内有多少个Feild
-			
-			
-			
-			if (numOfRegion == 0 && constraint == 0 ) {	//指向界外的0箭头 -> 直接取真
+			int numOfFieldInRegion = region.size();
+
+			if (numOfFieldInRegion == 0 && constraint == 0 ) {	// Point to outside of the board wit a zero constraint -> it must be TRUE
 				satSolver.addClause(new Clause(board.getSequentialIndex(field)));
 				continue;
-			} else if (constraint > numOfRegion) {	//region内的数量比constraint还小，肯定为假
+			} else if (constraint > numOfFieldInRegion) {	// Number of fields in region is smaller than the constraint -> it must be FALSE
 				satSolver.addClause(new Clause(-1 * board.getSequentialIndex(field)));
 				continue;
 			}
@@ -64,19 +61,19 @@ public class SpotlightSolver implements ISpotlightSolver {
 				sequentialIndexList.add(board.getSequentialIndex(fieldInRegion));
 			}
 			
-			ArrayList<ArrayList<Integer>> tempArrayList = findKNFandDNK(constraint, numOfRegion);
+			ArrayList<ArrayList<Integer>> tempArrayList = findDNFAndKNF(constraint, numOfFieldInRegion);
 			
 			ArrayList<Integer> DNF = tempArrayList.get(0);
 			ArrayList<Integer> KNF = tempArrayList.get(1);
 //	        System.out.println("DNF: " + tempArrayList.get(0).toString());
 //	        System.out.println("KNF: " + tempArrayList.get(1).toString());
 			for (Integer integer : DNF) {
-				int [] clause = KNFCOnvert(field.getSequentialIndex(board), sequentialIndexList, ~integer);
+				int [] clause = applyIntoSeqIndex(field.getSequentialIndex(board), sequentialIndexList, ~integer);	// It's '~' integer -> 'NOT' DNF
 //				System.out.println(Arrays.toString(clause));
 				satSolver.addClause(new Clause(clause));
 			}
 			for (Integer integer : KNF) {
-				int [] clause = KNFCOnvert(-1 * field.getSequentialIndex(board), sequentialIndexList, integer);
+				int [] clause = applyIntoSeqIndex(-1 * field.getSequentialIndex(board), sequentialIndexList, integer);
 //				System.out.println(Arrays.toString(clause));
 				satSolver.addClause(new Clause(clause));
 			}
@@ -117,16 +114,21 @@ public class SpotlightSolver implements ISpotlightSolver {
      * This main method can be used to test your implementation.
      */
     public static void main(String[] args) throws SpotlightException, IOException {
-        
-        if(args.length == 0) {
-            throw new SpotlightException("Expected one argument");
-        }
+//      -------main program----------
+//        if(args.length == 0) {
+//            throw new SpotlightException("Expected one argument");
+//        }
 //        Board b = Board.fromFile(new File(args[0]));
 //        SpotlightSolver solver = new SpotlightSolver();
 //        solver.solve(b);
 //        b.visualise();
-//      -----------------
-
+//      -------main program without outside args----------
+    	String fileString = "src/15x15.spotlight.txt";
+        Board b = Board.fromFile(new File(fileString));
+        SpotlightSolver solver = new SpotlightSolver();
+        solver.solve(b);
+        b.visualise();
+//      ------test of SATSolver-----------
 //        SATSolver satSolver = new SATSolver();
 //        satSolver.addClause(new Clause(-1,4));
 //        satSolver.addClause(new Clause(-2,3));
@@ -135,26 +137,36 @@ public class SpotlightSolver implements ISpotlightSolver {
 //        int [] solution = satSolver.solve();
 //        System.out.println(Arrays.toString(solution));
         
-//        -----------------
+//      --------test of findKNFandDNK---------
 //        long startTime = System.currentTimeMillis();
-//        ArrayList<Integer> list = CountToIntArray(16,15);
+//        ArrayList<ArrayList<Integer>> tempArrayList = findKNFandDNK(1, 3);
 //        long endTime = System.currentTimeMillis();
 //        System.out.println("程序运行时间： "+ (endTime - startTime) + "ms");
-//        System.out.println(list.size());
-//        if (list.size() <= 1000) {
-//        	System.out.println(list);
-//		}
-//      -----------------
-        long startTime = System.currentTimeMillis();
-        ArrayList<ArrayList<Integer>> tempArrayList = findKNFandDNK(1, 3);
-        long endTime = System.currentTimeMillis();
-        System.out.println("程序运行时间： "+ (endTime - startTime) + "ms");
-        System.out.println(tempArrayList.get(0).toString());
-        System.out.println(tempArrayList.get(1).toString());
+//        System.out.println(tempArrayList.get(0).toString());
+//        System.out.println(tempArrayList.get(1).toString());
     }
 
-    // 给出多少位比特以及其中1的个数，找出表示如此多1的析取范式DNF和合取范式KNF所对饮的标号
-    private static ArrayList<ArrayList<Integer>> findKNFandDNK(int numOfOne, int numOfBit) {
+    /**
+     * To generate both DNF and KNF express that, it is TRUE if and only if there are <b>X</b> ONE in <b>N</b> bit number.
+     * <p>
+     * Example: if there should be 1 ONE in 3 bit number 
+     * <p>
+     * <b>DNF</b>: (NOT P1 AND NOT P2 AND P3) OR (NOT P1 AND P2 AND NOT P3) OR (P1 AND NOT P2 AND NOT P3) 
+     * <p>
+     * -> 001 or 010 or 100; 
+     * <p>
+     * <b>KNF</b>: (P1 OR P2 OR P3) AND (P1 OR NOT P2 OR NOT P3) AND (NOT P1 AND P2 AND NOT P3) AND (NOT P1 OR NOT P2 OR P3) AND (NOT P1 OR NOT P2 OR NOT P3)
+     * <p>
+     * -> 111 and 100 and 010 and 001 and 000
+     * 
+     * @param numOfOne
+     * how many ONE in totally numOfBit bits (e.g. 1011: numOfOne == 3, numOfBit == 4)
+     * @param numOfBit
+     * totally how many bit we talking about. 
+     * @return
+     * Two ArrayList indicate the DNF and KNF
+     */
+    private static ArrayList<ArrayList<Integer>> findDNFAndKNF(int numOfOne, int numOfBit) {
     	if (numOfBit < 0) {
 			return null;
 		}
@@ -164,9 +176,7 @@ public class SpotlightSolver implements ISpotlightSolver {
 		if (numOfOne > numOfBit) {
 			numOfOne = numOfBit;
 		}
-		
 		int totalLoop = 1 << numOfBit;
-		
 		for (int i = 0; i < totalLoop; i++) {
 			if (pop2(i) == numOfOne) {
 				DNF.add(i);
@@ -174,23 +184,22 @@ public class SpotlightSolver implements ISpotlightSolver {
 				KNF.add((~i) & (totalLoop-1));
 			}
 		}
-		
 		formaleLIstArray.add(DNF);
 		formaleLIstArray.add(KNF);
-		
 		return formaleLIstArray;
 	}
     
-    private int[] KNFCOnvert(int theFirst, ArrayList<Integer> sequentialIndex, int indedxInTureTable) {
-    	int[] temp = new int[sequentialIndex.size() + 1];
-    	temp[0] = theFirst;
+    //
+    private int[] applyIntoSeqIndex(int theFirst, ArrayList<Integer> sequentialIndex, int indedxInTureTable) {
+    	int[] seqIndexInClause = new int[sequentialIndex.size() + 1];
+    	seqIndexInClause[0] = theFirst;
 		for (int i = 0; i < sequentialIndex.size(); i++) {
-			temp[i + 1] = sequentialIndex.get(i); 
+			seqIndexInClause[i + 1] = sequentialIndex.get(i); 
 			if ((indedxInTureTable & 1<<i) == 0) {
-				temp[i + 1] *= -1;
+				seqIndexInClause[i + 1] *= -1;
 			}
 		}
-		return temp;
+		return seqIndexInClause;
 	}
 
     // Calculate the number of One in a bit number. 
