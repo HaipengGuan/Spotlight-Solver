@@ -3,6 +3,8 @@ import java.io.IOException;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 
 import edu.kit.iti.lfm.spotlight.Board;
@@ -37,12 +39,31 @@ public class SpotlightSolver implements ISpotlightSolver {
         // must be present since it is called by the framework.
     }
     
+//    ArrayList<ArrayList<Integer>> normalFomulaResult;
+    
+    HashMap<Integer, ArrayList<Integer>> DNFResult = new HashMap<>();
+    HashMap<Integer, ArrayList<Integer>> KNFResult = new HashMap<>();
+    int maxConstraint = -1; // row
+    int maxNumOfFieldInRegion = -1; // column
+    
+    
     @Override
     public boolean solve(Board board) throws SpotlightException {
         
         SATSolver satSolver = new SATSolver();
         // addClauses to solver using satSolver.addClause()        
         // TODO
+        // to find the max number of constraint and the number of field in all region
+        for (Field field : board) {
+        	int constraint = field.getConstraint();
+			if (constraint > maxConstraint) {
+				maxConstraint = constraint;
+			}
+			int numOfFieldInRegion = field.getRegion(board).size();
+			if (numOfFieldInRegion > maxNumOfFieldInRegion) {
+				maxNumOfFieldInRegion = numOfFieldInRegion;
+			}
+		}
         for (Field field : board) {
         	System.out.println("Now processing Field Nr. " + board.getSequentialIndex(field));
 			int constraint = field.getConstraint();
@@ -61,7 +82,7 @@ public class SpotlightSolver implements ISpotlightSolver {
 				sequentialIndexList.add(board.getSequentialIndex(fieldInRegion));
 			}
 			
-			ArrayList<ArrayList<Integer>> tempArrayList = findDNFAndKNF(constraint, numOfFieldInRegion);
+			ArrayList<ArrayList<Integer>> tempArrayList = findDNFAndKNF(constraint, numOfFieldInRegion); // core step
 			
 			ArrayList<Integer> DNF = tempArrayList.get(0);
 			ArrayList<Integer> KNF = tempArrayList.get(1);
@@ -85,7 +106,7 @@ public class SpotlightSolver implements ISpotlightSolver {
         //
         // call solver to solve
         int[] solution = satSolver.solve();
-        System.out.println(Arrays.toString(solution));
+//        System.out.println(Arrays.toString(solution));
         if(solution == null) {
             return false;
         }
@@ -97,8 +118,9 @@ public class SpotlightSolver implements ISpotlightSolver {
         // TODO
         
         for (int i = 0; i < solution.length; i++) {
-			int col = (Math.abs(solution[i]) - 1) % board.countRows() + 1;
-			int row = (Math.abs(solution[i]) - 1) / board.countRows() + 1;
+        	int[] rowAndCol = seqToRowCol(Math.abs(solution[i]) - 1, board.countRows(), board.countColumns());
+			int row = rowAndCol[0] + 1;
+			int col = rowAndCol[1] + 1;
 			if (solution[i] > 0) {
 				board.getField(row, col).setColor(FieldColor.WHITE);
 			} else {
@@ -126,7 +148,12 @@ public class SpotlightSolver implements ISpotlightSolver {
     	String fileString = "src/15x15.spotlight.txt";
         Board b = Board.fromFile(new File(fileString));
         SpotlightSolver solver = new SpotlightSolver();
+        
+        long startTime = System.currentTimeMillis();
         solver.solve(b);
+        long endTime = System.currentTimeMillis();
+        System.out.println("Total time: "+ (endTime - startTime) + "ms");
+        
         b.visualise();
 //      ------test of SATSolver-----------
 //        SATSolver satSolver = new SATSolver();
@@ -166,27 +193,35 @@ public class SpotlightSolver implements ISpotlightSolver {
      * @return
      * Two ArrayList indicate the DNF and KNF
      */
-    private static ArrayList<ArrayList<Integer>> findDNFAndKNF(int numOfOne, int numOfBit) {
+    private ArrayList<ArrayList<Integer>> findDNFAndKNF(int numOfOne, int numOfBit) {
     	if (numOfBit < 0) {
 			return null;
 		}
-		ArrayList<ArrayList<Integer>> formaleLIstArray = new ArrayList<ArrayList<Integer>>(2);
-		ArrayList<Integer> KNF = new ArrayList<Integer>();
-		ArrayList<Integer> DNF = new ArrayList<Integer>();
 		if (numOfOne > numOfBit) {
 			numOfOne = numOfBit;
 		}
-		int totalLoop = 1 << numOfBit;
-		for (int i = 0; i < totalLoop; i++) {
-			if (pop2(i) == numOfOne) {
-				DNF.add(i);
-			} else {
-				KNF.add((~i) & (totalLoop-1));
+		ArrayList<ArrayList<Integer>> formulaListArray = new ArrayList<ArrayList<Integer>>(2);
+		int hashIndex = numOfOne * maxNumOfFieldInRegion + numOfBit;
+    	if (DNFResult.containsKey(hashIndex)) {
+    		formulaListArray.add(DNFResult.get(hashIndex));
+    		formulaListArray.add(KNFResult.get(hashIndex));
+		} else {
+			ArrayList<Integer> KNF = new ArrayList<Integer>();
+			ArrayList<Integer> DNF = new ArrayList<Integer>();
+			int totalLoop = 1 << numOfBit;
+			for (int i = 0; i < totalLoop; i++) {
+				if (pop2(i) == numOfOne) {
+					DNF.add(i);
+				} else {
+					KNF.add((~i) & (totalLoop-1));
+				}
 			}
+			formulaListArray.add(DNF);
+			DNFResult.put(hashIndex, DNF);
+			formulaListArray.add(KNF);
+			KNFResult.put(hashIndex, KNF);
 		}
-		formaleLIstArray.add(DNF);
-		formaleLIstArray.add(KNF);
-		return formaleLIstArray;
+		return formulaListArray;
 	}
     
     //
@@ -213,6 +248,28 @@ public class SpotlightSolver implements ISpotlightSolver {
         x = x%63;
         return x;
       }
+    
+    // convert sequence index into row and col number
+    private int[] seqToRowCol(int seq, int totalRow, int totalCol) {
+		if (seq < 0 || seq >= totalRow * totalCol) {
+			return null;
+		}
+		int[] RowCol = new int[2];
+		RowCol[0] = seq / totalCol; // Row
+		RowCol[1] = seq % totalCol; // Column
+		return RowCol;
+	}
+    
+    // convert row and column number into sequence index
+    private int rowColToSeq(int row, int col, int totalRow, int totalCol) {
+		if (row < 0 || row >= totalRow) {
+			return -1;
+		} else if (col < 0 || col >= totalCol) {
+			return -1;
+		} else {
+			return row * totalCol + col;
+		}
+	}
 }
 
 /*
