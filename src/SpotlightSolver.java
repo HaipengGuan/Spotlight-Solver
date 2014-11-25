@@ -64,6 +64,8 @@ public class SpotlightSolver implements ISpotlightSolver {
 				maxNumOfFieldInRegion = numOfFieldInRegion;
 			}
 		}
+        System.out.println("maxConstraint: " + maxConstraint);
+        System.out.println("maxNumOfFieldInRegion: " + maxNumOfFieldInRegion);
         for (Field field : board) {
         	System.out.println("Now processing Field Nr. " + board.getSequentialIndex(field));
 			int constraint = field.getConstraint();
@@ -77,27 +79,43 @@ public class SpotlightSolver implements ISpotlightSolver {
 				satSolver.addClause(new Clause(-1 * board.getSequentialIndex(field)));
 				continue;
 			}
+			// the sequence of the field in the region. -> waiting for being applied in the DNF and KNF.
 			ArrayList<Integer> sequentialIndexList = new ArrayList<Integer>();
 			for (Field fieldInRegion : region) {
-				sequentialIndexList.add(board.getSequentialIndex(fieldInRegion));
+				sequentialIndexList.add( board.getSequentialIndex(fieldInRegion));
 			}
 			
-			ArrayList<ArrayList<Integer>> tempArrayList = findDNFAndKNF(constraint, numOfFieldInRegion); // core step
+			int totalLoop = 1 << numOfFieldInRegion;
+			System.out.println("totalLoop: " + totalLoop);
+			for (int i = 0; i < totalLoop; i++) {
+				if (pop2(i) == constraint) { // DNF
+					int [] clause = applyIntoSeqIndex(field.getSequentialIndex(board), sequentialIndexList, ~i);
+					satSolver.addClause(new Clause(clause));
+				} else { // KNF
+					int [] clause = applyIntoSeqIndex(-1 * field.getSequentialIndex(board), sequentialIndexList, (~i) & (totalLoop-1));
+					satSolver.addClause(new Clause(clause));
+				}
+			}
 			
-			ArrayList<Integer> DNF = tempArrayList.get(0);
-			ArrayList<Integer> KNF = tempArrayList.get(1);
-//	        System.out.println("DNF: " + tempArrayList.get(0).toString());
-//	        System.out.println("KNF: " + tempArrayList.get(1).toString());
-			for (Integer integer : DNF) {
-				int [] clause = applyIntoSeqIndex(field.getSequentialIndex(board), sequentialIndexList, ~integer);	// It's '~' integer -> 'NOT' DNF
-//				System.out.println(Arrays.toString(clause));
-				satSolver.addClause(new Clause(clause));
-			}
-			for (Integer integer : KNF) {
-				int [] clause = applyIntoSeqIndex(-1 * field.getSequentialIndex(board), sequentialIndexList, integer);
-//				System.out.println(Arrays.toString(clause));
-				satSolver.addClause(new Clause(clause));
-			}
+			
+//			----- ##version 1.0## --------
+//			ArrayList<ArrayList<Integer>> tempArrayList = findDNFAndKNF(constraint, numOfFieldInRegion); // core step
+//			
+//			ArrayList<Integer> DNF = tempArrayList.get(0);
+//			ArrayList<Integer> KNF = tempArrayList.get(1);
+////	        System.out.println("DNF: " + tempArrayList.get(0).toString());
+////	        System.out.println("KNF: " + tempArrayList.get(1).toString());
+//			for (Integer integer : DNF) {
+//				int [] clause = applyIntoSeqIndex(field.getSequentialIndex(board), sequentialIndexList, ~integer);	// It's '~' integer -> 'NOT' DNF
+////				System.out.println(Arrays.toString(clause));
+//				satSolver.addClause(new Clause(clause));
+//			}
+//			for (Integer integer : KNF) {
+//				int [] clause = applyIntoSeqIndex(-1 * field.getSequentialIndex(board), sequentialIndexList, integer);
+////				System.out.println(Arrays.toString(clause));
+//				satSolver.addClause(new Clause(clause));
+//			}
+//			----- ##END of version 1.0##--------
 			
 		}
         //
