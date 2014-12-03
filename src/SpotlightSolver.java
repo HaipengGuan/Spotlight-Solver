@@ -1,16 +1,36 @@
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Array;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.TreeSet;
 
+import javax.swing.border.Border;
+
+import com.sun.corba.se.impl.protocol.giopmsgheaders.Message;
+import com.sun.org.apache.regexp.internal.recompile;
+import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils.Text;
+
+import static edu.kit.iti.lfm.spotlight.Formula.*;
 import edu.kit.iti.lfm.spotlight.Board;
 import edu.kit.iti.lfm.spotlight.Clause;
 import edu.kit.iti.lfm.spotlight.Field;
 import edu.kit.iti.lfm.spotlight.Field.FieldColor;
+import edu.kit.iti.lfm.spotlight.Formula.Equiv;
+import edu.kit.iti.lfm.spotlight.Formula.Impl;
+import edu.kit.iti.lfm.spotlight.Formula.Literal;
+import edu.kit.iti.lfm.spotlight.Formula.Not;
+import edu.kit.iti.lfm.spotlight.Formula.Or;
+import edu.kit.iti.lfm.spotlight.Formula;
+import edu.kit.iti.lfm.spotlight.FormulaVisitor;
 import edu.kit.iti.lfm.spotlight.ISpotlightSolver;
 import edu.kit.iti.lfm.spotlight.SATSolver;
 import edu.kit.iti.lfm.spotlight.SpotlightException;
@@ -39,78 +59,172 @@ public class SpotlightSolver implements ISpotlightSolver {
         // must be present since it is called by the framework.
     }
     
-//    ArrayList<ArrayList<Integer>> normalFomulaResult;
     
-    HashMap<Integer, ArrayList<Integer>> DNFResult = new HashMap<>();
-    HashMap<Integer, ArrayList<Integer>> KNFResult = new HashMap<>();
-    int maxConstraint = -1; // row
-    int maxNumOfFieldInRegion = -1; // column
-    
+    TreeSet<Integer> clauseHashCodeSet = new TreeSet<>();
+    HashSet<Integer> certainliteralSet = new HashSet<>();
     
     @Override
     public boolean solve(Board board) throws SpotlightException {
         
         SATSolver satSolver = new SATSolver();
+//		HashSet<Integer> clauseHashSet = new HashSet<>();
         // addClauses to solver using satSolver.addClause()        
         // TODO
-        // to find the max number of constraint and the number of field in all region
-        for (Field field : board) {
-        	int constraint = field.getConstraint();
-			if (constraint > maxConstraint) {
-				maxConstraint = constraint;
-			}
-			int numOfFieldInRegion = field.getRegion(board).size();
-			if (numOfFieldInRegion > maxNumOfFieldInRegion) {
-				maxNumOfFieldInRegion = numOfFieldInRegion;
+		boolean flag = true;
+		while (flag) {
+			flag = false;
+			outsideLoop:
+			for (Field field : board) {
+				int fieldSeq = field.getSequentialIndex(board);
+				if (certainliteralSet.contains(fieldSeq) || certainliteralSet.contains(-1*fieldSeq)) {
+					continue;
+				}
+				int constraint = field.getConstraint();
+				List<Field> region = field.getRegion(board);
+				int numOfFieldInRegion = region.size();
+				if (numOfFieldInRegion == 0 && constraint == 0) {	// Point to outside of the board with a zero constraint -> TRUE
+					certainliteralSet.add(field.getSequentialIndex(board));
+					flag = true;
+					continue;
+				} else if (constraint > numOfFieldInRegion) {	// Number of fields in region is smaller than the constraint -> FALSE
+					certainliteralSet.add(-1 * field.getSequentialIndex(board));
+					flag = true;
+					continue;
+				}
+				int constraint_0 = constraint;
+				int numOfFieldInRegion_0 = numOfFieldInRegion;
+//				ArrayList<Integer> seqIndexList = new ArrayList<Integer>();
+				for (Field fieldInRegion : region) {
+					int seqInRegion = fieldInRegion.getSequentialIndex(board);
+					if (certainliteralSet.contains(seqInRegion)) {	// -> already TRUE
+						if (constraint == 0) {	// TRUE field in region with a zero constraint -> FALSE
+							certainliteralSet.add(-1 * fieldSeq);
+							flag = true;
+							continue outsideLoop;
+						} else {
+							constraint -= 1;
+							numOfFieldInRegion -= 1;
+						}
+					} else if (certainliteralSet.contains(-1 * seqInRegion)) { // -> already FALSE
+						numOfFieldInRegion -= 1;
+					} else {
+	//					seqIndexList.add(seqInRegion);
+					}
+				}
+				if (constraint_0 == 0) {	//	With a zero constraint and all the fields in region is FLASE -> TRUE
+					if (numOfFieldInRegion == 0) {
+						certainliteralSet.add(fieldSeq);
+						flag = true;
+						continue;	
+					}	// else -> nothing change
+				} else if (constraint < constraint_0) {	//	There are at least one TURE in region
+					if (constraint < 0) { // to many TRUE -> FALSE
+						certainliteralSet.add(-1 * fieldSeq);
+						flag = true;
+						continue;
+					} else if (constraint == 0 && numOfFieldInRegion == 0) {	// just enough TURE fields in region -> TRUE
+						certainliteralSet.add(fieldSeq);
+						flag = true;
+						continue;
+					}
+				} else if (numOfFieldInRegion < numOfFieldInRegion_0) {	// No TRUE but at least one FLASE
+					if (numOfFieldInRegion < constraint) {	// too many FLASE, not enough fields for TRUE -> FLASE
+						certainliteralSet.add(-1 * fieldSeq);
+						flag = true;
+						continue;
+					}
+				} else {	//	nothing change
+					
+				}
 			}
 		}
+
+
         for (Field field : board) {
-        	System.out.println("Now processing Field Nr. " + board.getSequentialIndex(field));
+			int fieldSeq = field.getSequentialIndex(board);
+        	System.out.println("Now processing Field Nr. " + fieldSeq);
+			if (certainliteralSet.contains(fieldSeq) || certainliteralSet.contains(-1*fieldSeq)) {
+				System.out.println("skip");
+				continue;
+			}
+        	
 			int constraint = field.getConstraint();
 			List<Field> region = field.getRegion(board);
 			int numOfFieldInRegion = region.size();
-
-			if (numOfFieldInRegion == 0 && constraint == 0 ) {	// Point to outside of the board wit a zero constraint -> it must be TRUE
-				satSolver.addClause(new Clause(board.getSequentialIndex(field)));
-				continue;
-			} else if (constraint > numOfFieldInRegion) {	// Number of fields in region is smaller than the constraint -> it must be FALSE
-				satSolver.addClause(new Clause(-1 * board.getSequentialIndex(field)));
-				continue;
-			}
-			ArrayList<Integer> sequentialIndexList = new ArrayList<Integer>();
+			// the sequence of the field in the region. -> waiting for being applied in the DNF and KNF.
+			ArrayList<Integer> seqIndexList = new ArrayList<Integer>();
 			for (Field fieldInRegion : region) {
-				sequentialIndexList.add(board.getSequentialIndex(fieldInRegion));
+				int seqInRegion = fieldInRegion.getSequentialIndex(board);
+				if (certainliteralSet.contains(seqInRegion)) {	// -> already TRUE
+						constraint -= 1;
+						numOfFieldInRegion -= 1;
+				} else if (certainliteralSet.contains(-1 * seqInRegion)) { // -> already FALSE
+					numOfFieldInRegion -= 1;
+				} else {
+					seqIndexList.add(seqInRegion);
+//					if (seqInRegion > fieldSeq) {	//	It can't be TRUE at the same time.
+//						satSolver.addClause(new Clause(-1 * seqInRegion, -1 * fieldSeq));
+//					}	
+				}
 			}
-			
-			ArrayList<ArrayList<Integer>> tempArrayList = findDNFAndKNF(constraint, numOfFieldInRegion); // core step
-			
-			ArrayList<Integer> DNF = tempArrayList.get(0);
-			ArrayList<Integer> KNF = tempArrayList.get(1);
-//	        System.out.println("DNF: " + tempArrayList.get(0).toString());
-//	        System.out.println("KNF: " + tempArrayList.get(1).toString());
-			for (Integer integer : DNF) {
-				int [] clause = applyIntoSeqIndex(field.getSequentialIndex(board), sequentialIndexList, ~integer);	// It's '~' integer -> 'NOT' DNF
-//				System.out.println(Arrays.toString(clause));
-				satSolver.addClause(new Clause(clause));
+
+			int totalLoop = 1 << numOfFieldInRegion;
+			System.out.println("totalLoop: " + totalLoop);
+			int [] clauseInteger = new int [seqIndexList.size()];
+			for (int i = 0; i < totalLoop; i++) {
+				if (pop2(i) == constraint) { // DNF
+//					indedxInTureTable = ~i;
+//					clause[mainFieldIndex] = seqIndexList.get(mainFieldIndex);
+					clauseInteger = applyIntoSeqIndex(fieldSeq, seqIndexList, ~i);
+//					satSolver.addClause(new Clause(clause));
+				} else { // KNF
+//					indedxInTureTable = (~i) & (totalLoop-1);
+//					seqIndexList.set(mainFieldIndex, -1 * seqIndexList.get(mainFieldIndex));
+//					clause[mainFieldIndex] = -1 * seqIndexList.get(mainFieldIndex);
+					clauseInteger = applyIntoSeqIndex(-1 * fieldSeq, seqIndexList, (~i) & (totalLoop-1));
+//					satSolver.addClause(new Clause(clause));
+				}
+//				Arrays.sort(clauseInteger, new byAbsComparator()); // sort by absolute value
+
+//				satSolver.addClause(new Clause(clauseInteger));
+//				System.out.println("Now the size of clause set is " + satSolver.getClauses().size() + " in the field " + fieldSeq);
+				
+				int hashCode = Arrays.toString(clauseInteger).hashCode();
+				if (!clauseHashCodeSet.contains(hashCode)) {
+					satSolver.addClause(new Clause(clauseInteger));
+					clauseHashCodeSet.add(hashCode);
+				}
 			}
-			for (Integer integer : KNF) {
-				int [] clause = applyIntoSeqIndex(-1 * field.getSequentialIndex(board), sequentialIndexList, integer);
-//				System.out.println(Arrays.toString(clause));
-				satSolver.addClause(new Clause(clause));
-			}
-			
+
+			System.out.println("Now the size of clause set is " + satSolver.getClauses().size() + " in the field " + fieldSeq);
 		}
         //
 
-       
+//        System.out.println("finish collect, now transfering...");
+//        Iterator<Integer []> iterator = resultClauseSet.iterator();
+//        while (iterator.hasNext()) {
+//        	satSolver.addClause(new Clause(toPrimitive(iterator.next())));
+//        	iterator.remove();
+//		}
         //
         // call solver to solve
-        int[] solution = satSolver.solve();
-//        System.out.println(Arrays.toString(solution));
-        if(solution == null) {
+        System.out.println("Total size of clause: " + satSolver.getClauses().size());
+        System.out.println("SAT solving...");
+        int[] solution_1 = satSolver.solve();
+        if(solution_1 == null) {
+        	System.out.println("solution is null");
             return false;
         }
-        
+        System.out.println("Copying result part 1....");
+        int [] solution = new int [certainliteralSet.size() + solution_1.length];
+        System.arraycopy(solution_1, 0, solution, 0, solution_1.length);
+        System.out.println("Copying result part 2....");
+        int j = solution_1.length;
+		Iterator<Integer> iterator = certainliteralSet.iterator();
+		while (iterator.hasNext()) {
+			solution[j] = iterator.next();
+			j += 1;
+		}
         //
         // translate result from solution to board using 
         // b.setColor(row, col, color) with color either 
@@ -118,9 +232,9 @@ public class SpotlightSolver implements ISpotlightSolver {
         // TODO
         
         for (int i = 0; i < solution.length; i++) {
-        	int[] rowAndCol = seqToRowCol(Math.abs(solution[i]) - 1, board.countRows(), board.countColumns());
-			int row = rowAndCol[0] + 1;
-			int col = rowAndCol[1] + 1;
+//        	int[] rowAndCol = seqToRowCol(Math.abs(solution[i]) - 1, board.countRows(), board.countColumns());
+			int row = (Math.abs(solution[i]) - 1) / board.countColumns() + 1;
+			int col = (Math.abs(solution[i]) - 1) % board.countColumns() + 1;
 			if (solution[i] > 0) {
 				board.getField(row, col).setColor(FieldColor.WHITE);
 			} else {
@@ -135,7 +249,7 @@ public class SpotlightSolver implements ISpotlightSolver {
     /*
      * This main method can be used to test your implementation.
      */
-    public static void main(String[] args) throws SpotlightException, IOException {
+    public static void main(String[] args) throws SpotlightException, IOException, NoSuchAlgorithmException {
 //      -------main program----------
 //        if(args.length == 0) {
 //            throw new SpotlightException("Expected one argument");
@@ -145,7 +259,7 @@ public class SpotlightSolver implements ISpotlightSolver {
 //        solver.solve(b);
 //        b.visualise();
 //      -------main program without outside args----------
-    	String fileString = "src/15x15.spotlight.txt";
+    	String fileString = "src/20x20.spotlight.txt";
         Board b = Board.fromFile(new File(fileString));
         SpotlightSolver solver = new SpotlightSolver();
         
@@ -155,77 +269,36 @@ public class SpotlightSolver implements ISpotlightSolver {
         System.out.println("Total time: "+ (endTime - startTime) + "ms");
         
         b.visualise();
-//      ------test of SATSolver-----------
-//        SATSolver satSolver = new SATSolver();
-//        satSolver.addClause(new Clause(-1,4));
-//        satSolver.addClause(new Clause(-2,3));
-//        satSolver.addClause(new Clause(-3,-1));
-//        satSolver.addClause(new Clause(-4,1));
-//        int [] solution = satSolver.solve();
-//        System.out.println(Arrays.toString(solution));
-        
-//      --------test of findKNFandDNK---------
-//        long startTime = System.currentTimeMillis();
-//        ArrayList<ArrayList<Integer>> tempArrayList = findKNFandDNK(1, 3);
-//        long endTime = System.currentTimeMillis();
-//        System.out.println("程序运行时间： "+ (endTime - startTime) + "ms");
-//        System.out.println(tempArrayList.get(0).toString());
-//        System.out.println(tempArrayList.get(1).toString());
-    }
 
-    /**
-     * To generate both DNF and KNF express that, it is TRUE if and only if there are <b>X</b> ONE in <b>N</b> bit number.
-     * <p>
-     * Example: if there should be 1 ONE in 3 bit number 
-     * <p>
-     * <b>DNF</b>: (NOT P1 AND NOT P2 AND P3) OR (NOT P1 AND P2 AND NOT P3) OR (P1 AND NOT P2 AND NOT P3) 
-     * <p>
-     * -> 001 or 010 or 100; 
-     * <p>
-     * <b>KNF</b>: (P1 OR P2 OR P3) AND (P1 OR NOT P2 OR NOT P3) AND (NOT P1 AND P2 AND NOT P3) AND (NOT P1 OR NOT P2 OR P3) AND (NOT P1 OR NOT P2 OR NOT P3)
-     * <p>
-     * -> 111 and 100 and 010 and 001 and 000
-     * 
-     * @param numOfOne
-     * how many ONE in totally numOfBit bits (e.g. 1011: numOfOne == 3, numOfBit == 4)
-     * @param numOfBit
-     * totally how many bit we talking about. 
-     * @return
-     * Two ArrayList indicate the DNF and KNF
-     */
-    private ArrayList<ArrayList<Integer>> findDNFAndKNF(int numOfOne, int numOfBit) {
-    	if (numOfBit < 0) {
-			return null;
-		}
-		if (numOfOne > numOfBit) {
-			numOfOne = numOfBit;
-		}
-		ArrayList<ArrayList<Integer>> formulaListArray = new ArrayList<ArrayList<Integer>>(2);
-		int hashIndex = numOfOne * maxNumOfFieldInRegion + numOfBit;
-    	if (DNFResult.containsKey(hashIndex)) {
-    		formulaListArray.add(DNFResult.get(hashIndex));
-    		formulaListArray.add(KNFResult.get(hashIndex));
-		} else {
-			ArrayList<Integer> KNF = new ArrayList<Integer>();
-			ArrayList<Integer> DNF = new ArrayList<Integer>();
-			int totalLoop = 1 << numOfBit;
-			for (int i = 0; i < totalLoop; i++) {
-				if (pop2(i) == numOfOne) {
-					DNF.add(i);
-				} else {
-					KNF.add((~i) & (totalLoop-1));
-				}
-			}
-			formulaListArray.add(DNF);
-			DNFResult.put(hashIndex, DNF);
-			formulaListArray.add(KNF);
-			KNFResult.put(hashIndex, KNF);
-		}
-		return formulaListArray;
-	}
+//      --------test of Comparator---------
+//    	int[] data = new int[] { 5, 4, 2, 1, 3 };
+//    	Integer[] sorted = new Integer[] { 5, -4, 2, 1, 3 };
+//    	Arrays.sort(sorted, new byAbsComparator());
+//    	Arrays.sort(sorted, new Comparator<Integer>() {
+//    	    public int compare(Integer o1, Integer o2) {
+//    	        int x = Math.abs(o1);
+//    	        int y = Math.abs(o2);
+//    	        return (x < y) ? -1 : ((x == y) ? 0 : 1);
+//    	    }
+//    	});
+//    	System.out.println(Arrays.toString(sorted));
+//      --------test of findSameList---------
+
+//    	Integer [] a1 = new Integer[] {1,2,3,4};
+//    	Integer [] a2 = new Integer[] {1,-2,3,4};
+//    	Integer [] a3 = new Integer[] {1,2,3};
+//    	Integer [] a4 = new Integer[] {2,1,3,4};
+//    	Integer[] test = findSameList(a1, a4);
+//    	if (test != null) {
+//    		System.out.println(Arrays.toString(test));
+//		} else {
+//			System.out.println("null");
+//		}
+    	
+    }
     
     //
-    private int[] applyIntoSeqIndex(int theFirst, ArrayList<Integer> sequentialIndex, int indedxInTureTable) {
+    private int [] applyIntoSeqIndex(int theFirst, ArrayList<Integer> sequentialIndex, int indedxInTureTable) {
     	int[] seqIndexInClause = new int[sequentialIndex.size() + 1];
     	seqIndexInClause[0] = theFirst;
 		for (int i = 0; i < sequentialIndex.size(); i++) {
@@ -237,6 +310,48 @@ public class SpotlightSolver implements ISpotlightSolver {
 		return seqIndexInClause;
 	}
 
+
+    
+    
+    // 判断两个有序的数组是否“互补”
+    private  Integer[] findSameList(Integer[] a, Integer[] b) {
+		if (a.length != b.length) {
+			return null;
+		}
+		ArrayList<Integer> resultList = new ArrayList<Integer>();
+		for (int i = 0; i < a.length; i++) {
+			if (a[i] == b[i]) {
+				resultList.add(a[i]);
+			} else if (a[i] + b[i] == 0) {
+				continue;
+			} else {
+				return null;
+			}
+		}
+		return (Integer[]) resultList.toArray(new Integer[0]);
+	}
+    
+//    private Integer [] simplifySet(Integer [] key, HashSet<Integer []> intergerSet) {
+//		if (!intergerSet.contains(key)) {
+//			return null;
+//		}
+//		for (Integer[] integers : intergerSet) {
+//			if (key.equals(integers)) {
+//				continue;
+//			}
+//			Integer [] sameIntegers = findSameList(key, integers);
+//			if (sameIntegers != null) {
+//				resultClauseSet.remove(key);
+//				resultClauseSet.remove(integers);
+//				resultClauseSet.add(sameIntegers);
+////				return simplifySet(sameIntegers,intergerSet);
+//				break;
+//			}
+//		}
+//		return key;
+//	}
+
+    
     // Calculate the number of One in a bit number. 
     private static int pop2(int x) {
         int n;
@@ -245,33 +360,37 @@ public class SpotlightSolver implements ISpotlightSolver {
         n = (n >> 1) & 033333333333;
         x = x - n;
         x = (x + (x >> 3)) & 030707070707;
-        x = x%63;
+        x = x % 63;
         return x;
       }
     
-    // convert sequence index into row and col number
-    private int[] seqToRowCol(int seq, int totalRow, int totalCol) {
-		if (seq < 0 || seq >= totalRow * totalCol) {
-			return null;
+    // Convert Integer list to int list
+    private int [] toPrimitive(Integer [] list) {
+		int [] listInt = new int [list.length];
+		for (int i = 0; i < listInt.length; i++) {
+			listInt[i] = list[i];
 		}
-		int[] RowCol = new int[2];
-		RowCol[0] = seq / totalCol; // Row
-		RowCol[1] = seq % totalCol; // Column
-		return RowCol;
+		return listInt;
 	}
-    
-    // convert row and column number into sequence index
-    private int rowColToSeq(int row, int col, int totalRow, int totalCol) {
-		if (row < 0 || row >= totalRow) {
-			return -1;
-		} else if (col < 0 || col >= totalCol) {
-			return -1;
-		} else {
-			return row * totalCol + col;
+    // Convert int list to Integer list
+    private Integer [] toObject(int [] list) {
+		Integer [] listInt = new Integer [list.length];
+		for (int i = 0; i < listInt.length; i++) {
+			listInt[i] = list[i];
 		}
+		return listInt;
 	}
 }
 
+
+// Absolute value comparator
+class byAbsComparator implements Comparator<Object>{
+	public int compare(Object o1, Object o2) {
+        int x = Math.abs((Integer)o1);
+        int y = Math.abs((Integer)o2);
+        return (x < y) ? -1 : ((x == y) ? 0 : 1);
+	}
+}
 /*
  * If you want/need to implement more classes, you can put them here. A Java
  * source file can contain at most ONE public declaration, however.
