@@ -10,6 +10,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.TreeSet;
 
+import org.sat4j.*;
+
 import edu.kit.iti.lfm.spotlight.Board;
 import edu.kit.iti.lfm.spotlight.Clause;
 import edu.kit.iti.lfm.spotlight.Field;
@@ -43,15 +45,16 @@ public class SpotlightSolver implements ISpotlightSolver {
     }
     
     
-    TreeSet<Integer> clauseHashCodeSet = new TreeSet<>();
-    HashSet<Integer> certainliteralSet = new HashSet<>();
+//    TreeSet<Integer> clauseHashCodeSet = new TreeSet<>();
     
     @Override
     public boolean solve(Board board) throws SpotlightException {
         
+    	HashSet<Integer> certainliteralSet = new HashSet<>();
         SATSolver satSolver = new SATSolver();
         // addClauses to solver using satSolver.addClause()        
         // TODO
+//        System.out.println(board.toDescriptionString());
 		boolean flag = true;
 		while (flag) {
 			flag = false;
@@ -65,11 +68,11 @@ public class SpotlightSolver implements ISpotlightSolver {
 				List<Field> region = field.getRegion(board);
 				int numOfFieldInRegion = region.size();
 				if (numOfFieldInRegion == 0 && constraint == 0) {	// Point to outside of the board with a zero constraint -> TRUE
-					certainliteralSet.add(field.getSequentialIndex(board));
+					certainliteralSet.add(fieldSeq);
 					flag = true;
 					continue;
 				} else if (constraint > numOfFieldInRegion) {	// Number of fields in region is smaller than the constraint -> FALSE
-					certainliteralSet.add(-1 * field.getSequentialIndex(board));
+					certainliteralSet.add(-1 * fieldSeq);
 					flag = true;
 					continue;
 				}
@@ -119,9 +122,9 @@ public class SpotlightSolver implements ISpotlightSolver {
 
         for (Field field : board) {
 			int fieldSeq = field.getSequentialIndex(board);
-//        	System.out.println("Now processing Field Nr. " + fieldSeq);
+        	System.out.println("Now processing Field No. " + fieldSeq);
 			if (certainliteralSet.contains(fieldSeq) || certainliteralSet.contains(-1*fieldSeq)) {
-//				System.out.println("skip");
+				System.out.println("skip");
 				continue;
 			}
         	
@@ -141,40 +144,33 @@ public class SpotlightSolver implements ISpotlightSolver {
 					seqIndexList.add(seqInRegion);
 				}
 			}
-
+//			System.out.println("Now this seq list is: " + seqIndexList.toString());
 			int totalLoop = 1 << numOfFieldInRegion;
-//			System.out.println("totalLoop: " + totalLoop);
-			int [] clauseInteger = new int [seqIndexList.size()];
+			System.out.println("total Loop: " + totalLoop);
 			for (int i = 0; i < totalLoop; i++) {
+				int [] clauseInteger = new int [seqIndexList.size()];
 				if (pop2(i) == constraint) { // DNF
 					clauseInteger = applyIntoSeqIndex(fieldSeq, seqIndexList, ~i);
 				} else { // KNF
 					clauseInteger = applyIntoSeqIndex(-1 * fieldSeq, seqIndexList, (~i) & (totalLoop-1));
 				}
-				int hashCode = Arrays.toString(clauseInteger).hashCode();
-				if (!clauseHashCodeSet.contains(hashCode)) {
+				
+				if (!satSolver.getClauses().contains(clauseInteger)) {
 					satSolver.addClause(new Clause(clauseInteger));
-					clauseHashCodeSet.add(hashCode);
 				}
 			}
-
-//			System.out.println("Now the size of clause set is " + satSolver.getClauses().size() + " in the field " + fieldSeq);
 		}
         //
 
         //
         // call solver to solve
-//        System.out.println("Total size of clause: " + satSolver.getClauses().size());
-//        System.out.println("SAT solving...");
         int[] solution_1 = satSolver.solve();
         if(solution_1 == null) {
-//        	System.out.println("solution is null");
             return false;
         }
-//        System.out.println("Copying result part 1....");
+        Arrays.sort(solution_1);
         int [] solution = new int [certainliteralSet.size() + solution_1.length];
         System.arraycopy(solution_1, 0, solution, 0, solution_1.length);
-//        System.out.println("Copying result part 2....");
         int j = solution_1.length;
 		Iterator<Integer> iterator = certainliteralSet.iterator();
 		while (iterator.hasNext()) {
@@ -186,7 +182,6 @@ public class SpotlightSolver implements ISpotlightSolver {
         // b.setColor(row, col, color) with color either 
         // Field.FieldColor.BLACK or Field.FieldColor.WHITE
         // TODO
-        
         for (int i = 0; i < solution.length; i++) {
 			int row = (Math.abs(solution[i]) - 1) / board.countColumns() + 1;
 			int col = (Math.abs(solution[i]) - 1) % board.countColumns() + 1;
@@ -194,10 +189,10 @@ public class SpotlightSolver implements ISpotlightSolver {
 				board.getField(row, col).setColor(FieldColor.WHITE);
 			} else {
 				board.getField(row, col).setColor(FieldColor.BLACK);
-				
 			}
 		}
-        
+        solution = null;
+        solution_1 = null;
         return true;
     }
     
